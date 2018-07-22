@@ -317,6 +317,9 @@ string JSTransfer::transferVariableDeclaration(VariableDeclaration const& _decla
 
 	string source_line("");
 
+	if(varName.empty())
+		return "";
+
 	if(isBigNumberType((ElementaryTypeName*)_declaration.typeName())){
 		m_transfer_status->setBignumFlag(true);
 	}
@@ -495,6 +498,7 @@ void JSTransfer::transferIfStatement(IfStatement const& _statement){
 		appendSourceLine("}else{\n");
 		indention++;
 		_statement.falseStatement()->accept(*this);
+		indention--;
 	}
 }
 
@@ -534,11 +538,20 @@ bool JSTransfer::visit(InlineAssembly const& ){
 }
 void JSTransfer::endVisit(InlineAssembly const& ){}
 
-bool JSTransfer::visit(Return const& ){
-	return true;
+bool JSTransfer::visit(Return const& _node){
+	if(isAstHandled(_node.id()))
+		return true;
 
+	return true;
 }
-void JSTransfer::endVisit(Return const& ){}
+void JSTransfer::endVisit(Return const& _node){
+	if(isAstHandled(_node.id()))
+		return;
+
+	appendSourceLine("return " + popExprStack() + ";\n");
+
+	setAstHandled(_node.id());
+}
 
 bool JSTransfer::visit(EmitStatement const& ){
 	return true;
@@ -645,18 +658,102 @@ void JSTransfer::endVisit(BinaryOperation const& _operation){
 			std::string opr1 = popExprStack();
 			std::string binary_expr = "";
 
-			if(_operation.getOperator() == Token::Value::Add){
-				binary_expr = opr1 + ".plus(" + opr2 + ")";
-
-			}else if(_operation.getOperator() == Token::Value::Sub){
-				binary_expr = opr1 + ".minus(" + opr2 + ")";
-
-			}else if(_operation.getOperator() == Token::Value::Mul){
-				binary_expr = opr1 + ".mul(" + opr2 + ")";
-
-			}else if(_operation.getOperator() == Token::Value::Div){
-				binary_expr = opr1 + ".div(" + opr2 + ")";
-
+			switch(_operation.getOperator()){
+				case Token::Value::Add:
+					binary_expr = opr1 + ".plus(" + opr2 + ")";
+					break;
+				case Token::Value::Sub:
+					binary_expr = opr1 + ".minus(" + opr2 + ")";
+					break;
+				case Token::Value::Mul:
+					binary_expr = opr1 + ".mul(" + opr2 + ")";
+					break;
+				case Token::Value::Div:
+					binary_expr = opr1 + ".div(" + opr2 + ")";
+					break;
+				case Token::Value::Mod:
+					binary_expr = opr1 + ".mod(" + opr2 + ")";
+					break;
+				case Token::Value::Exp:
+					binary_expr = opr1 + "**" + opr2;
+					break;
+				case Token::Value::Equal:
+					binary_expr = opr1 + ".equal(" + opr2 + ")";
+					break;
+				case Token::Value::NotEqual:
+					binary_expr = opr1 + "!=" + opr2;
+					break;
+				case Token::Value::LessThan:
+					binary_expr = opr1 + ".lt(" + opr2 + ")";
+					break;
+				case Token::Value::GreaterThan:
+					binary_expr = opr1 + ".gt(" + opr2 + ")";
+					break;
+				case Token::Value::LessThanOrEqual:
+					binary_expr = opr1 + ".lte(" + opr2 + ")";
+					break;
+				case Token::Value::GreaterThanOrEqual:
+					binary_expr = opr1 + ".gte(" + opr2 + ")";
+					break;
+				case Token::Value::AssignBitOr:
+					binary_expr = opr1 + "|=" + opr2;
+					break;
+				case Token::Value::AssignBitXor:
+					binary_expr = opr1 + "^=" + opr2;
+					break;
+				case Token::Value::AssignBitAnd:
+					binary_expr = opr1 + "&=" + opr2;
+					break;
+				case Token::Value::AssignShl:
+					binary_expr = opr1 + "<<=" + opr2;
+					break;
+				case Token::Value::AssignSar:
+					binary_expr = opr1 + ">>=" + opr2;
+					break;
+				case Token::Value::AssignShr:
+					binary_expr = opr1 + ">>>=" + opr2;
+					break;
+				case Token::Value::AssignAdd:
+					binary_expr = opr1 + "+=" + opr2;
+					break;
+				case Token::Value::AssignSub:
+					binary_expr = opr1 + "-=" + opr2;
+					break;
+				case Token::Value::AssignMul:
+					binary_expr = opr1 + "*=" + opr2;
+					break;
+				case Token::Value::AssignDiv:
+					binary_expr = opr1 + "/=" + opr2;
+					break;
+				case Token::Value::AssignMod:
+					binary_expr = opr1 + "%=" + opr2;
+					break;
+				case Token::Value::Or:
+					binary_expr = opr1 + "||" + opr2;
+					break;
+				case Token::Value::And:
+					binary_expr = opr1 + "&&" + opr2;
+					break;
+				case Token::Value::BitOr:
+					binary_expr = opr1 + "|" + opr2;
+					break;
+				case Token::Value::BitXor:
+					binary_expr = opr1 + "^" + opr2;
+					break;
+				case Token::Value::BitAnd:
+					binary_expr = opr1 + "&" + opr2;
+					break;
+				case Token::Value::SHL:
+					binary_expr = opr1 + "<<" + opr2;
+					break;
+				case Token::Value::SAR:
+					binary_expr = opr1 + ">>" + opr2;
+					break;
+				case Token::Value::SHR:
+					binary_expr = opr1 + ">>>" + opr2;
+					break;
+				default:
+					break;
 			}
 
 			if(m_expr_stack.size()>0)
@@ -686,6 +783,30 @@ void JSTransfer::endVisit(BinaryOperation const& _operation){
 				case Token::Value::Div:
 					binary_expr = opr1 + "/" + opr2;
 					break;
+				case Token::Value::Mod:
+					binary_expr = opr1 + "%" + opr2;
+					break;
+				case Token::Value::Exp:
+					binary_expr = opr1 + "**" + opr2;
+					break;
+				case Token::Value::Equal:
+					binary_expr = opr1 + "==" + opr2;
+					break;
+				case Token::Value::NotEqual:
+					binary_expr = opr1 + "!=" + opr2;
+					break;
+				case Token::Value::LessThan:
+					binary_expr = opr1 + "<" + opr2;
+					break;
+				case Token::Value::GreaterThan:
+					binary_expr = opr1 + ">" + opr2;
+					break;
+				case Token::Value::LessThanOrEqual:
+					binary_expr = opr1 + "<=" + opr2;
+					break;
+				case Token::Value::GreaterThanOrEqual:
+					binary_expr = opr1 + ">=" + opr2;
+					break;
 				case Token::Value::AssignBitOr:
 					binary_expr = opr1 + "|=" + opr2;
 					break;
@@ -700,6 +821,50 @@ void JSTransfer::endVisit(BinaryOperation const& _operation){
 					break;
 				case Token::Value::AssignSar:
 					binary_expr = opr1 + ">>=" + opr2;
+					break;
+				case Token::Value::AssignShr:
+					binary_expr = opr1 + ">>>=" + opr2;
+					break;
+				case Token::Value::AssignAdd:
+					binary_expr = opr1 + "+=" + opr2;
+					break;
+				case Token::Value::AssignSub:
+					binary_expr = opr1 + "-=" + opr2;
+					break;
+				case Token::Value::AssignMul:
+					binary_expr = opr1 + "*=" + opr2;
+					break;
+				case Token::Value::AssignDiv:
+					binary_expr = opr1 + "/=" + opr2;
+					break;
+				case Token::Value::AssignMod:
+					binary_expr = opr1 + "%=" + opr2;
+					break;
+				case Token::Value::Or:
+					binary_expr = opr1 + "||" + opr2;
+					break;
+				case Token::Value::And:
+					binary_expr = opr1 + "&&" + opr2;
+					break;
+				case Token::Value::BitOr:
+					binary_expr = opr1 + "|" + opr2;
+					break;
+				case Token::Value::BitXor:
+					binary_expr = opr1 + "^" + opr2;
+					break;
+				case Token::Value::BitAnd:
+					binary_expr = opr1 + "&" + opr2;
+					break;
+				case Token::Value::SHL:
+					binary_expr = opr1 + "<<" + opr2;
+					break;
+				case Token::Value::SAR:
+					binary_expr = opr1 + ">>" + opr2;
+					break;
+				case Token::Value::SHR:
+					binary_expr = opr1 + ">>>" + opr2;
+					break;
+				default:
 					break;
 			}
 
@@ -780,7 +945,7 @@ void JSTransfer::writeSource(const string& srcFileName){
 	try{
 		fstream of(srcFileName, ios::out);
 		of<<"// Smart contract transferred from Solidity, based on 0.4.24"<<endl<<endl;
-		of<<"\'use strict;\'"<<endl<<endl;
+		of<<"\'use strict\';"<<endl<<endl;
 		vector<string>::iterator iter = m_js_src.begin();
 		while(iter != m_js_src.end()){
 			of<<*iter<<endl;
