@@ -128,9 +128,9 @@ namespace dev{
             JSTransfer(std::string const& _source):
                     m_errorReporter(m_errorList),
                     m_errorList(),
-                    m_source(_source),
-                    indention(0){
-                        m_transfer_status = std::unique_ptr<TransferStatus>(new TransferStatus()); 
+                    m_source(_source){
+                        m_transfer_status = std::unique_ptr<TransferStatus>(new TransferStatus());
+                        indention = 0;
                     }
 
             bool transfer(ASTNode const& _astRoot);
@@ -272,7 +272,9 @@ namespace dev{
 
             std::string transferExpressionStatement(ExpressionStatement const& );
 
-            void transferIfStatement(IfStatement const& );
+            void transferIfStatement(IfStatement const&);
+
+            void transferForStatement(ForStatement const&);
 
 
             // Utility methods for handling compose parts belong to certain statement

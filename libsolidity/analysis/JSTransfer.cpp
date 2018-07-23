@@ -518,18 +518,53 @@ void JSTransfer::endVisit(IfStatement const& _statement){
 	appendSourceLine("}\n");
 
 	setAstHandled(_statement.id());
+}
+
+void JSTransfer::transferForStatement(ForStatement const& _statement){
+
+	string source_line = "for(";
+	
+	_statement.initializationExpression()->accept(*this);
+	
+	source_line += popExprStack() + "; ";
+
+	_statement.condition()->accept(*this);
+
+	source_line += popExprStack() + "; ";
+
+	_statement.loopExpression()->accept(*this);
+
+	source_line += popExprStack();
+
+	source_line += "){\n";
+
+	appendSourceLine(source_line);
+
+	indention++;
+
+	_statement.body().accept(*this);
+
 	indention--;
 }
 
-bool JSTransfer::visit(ForStatement const&)
+bool JSTransfer::visit(ForStatement const& _statement)
 {
-	m_inLoopDepth++;
+	if(isAstHandled(_statement.id()))
+		return true;
+	
+	transferForStatement(_statement);
+
 	return true;
 }
 
-void JSTransfer::endVisit(ForStatement const&)
+void JSTransfer::endVisit(ForStatement const& _statement)
 {
-	m_inLoopDepth--;
+	if(isAstHandled(_statement.id()))
+		return;
+
+	appendSourceLine("}\n");
+
+	setAstHandled(_statement.id());
 }
 
 bool JSTransfer::visit(InlineAssembly const& ){
@@ -616,6 +651,7 @@ bool JSTransfer::visit(UnaryOperation const& _operation){
 	// Inc, Dec, Add, Sub, Not, BitNot, Delete
 	Token::Value op = _operation.getOperator();
 	bool const modifying = (op == Token::Value::Inc || op == Token::Value::Dec || op == Token::Value::Delete);
+
 	return false;
 }
 void JSTransfer::endVisit(UnaryOperation const& ){}
