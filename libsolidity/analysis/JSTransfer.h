@@ -64,11 +64,14 @@ namespace dev{
                 bool m_is_event_flag;
                 bool m_is_emit_flag;
                 bool m_is_pure_statement_flag;
+                bool m_is_condition_statement_flag;
+                bool m_is_for_statement_flag;
 
             public:
                 TransferStatus():m_bignum_flag(false), m_is_function_declaration_flag(false),   \
                                 m_is_function_call_flag(false), m_is_event_flag(false), \
-                                m_is_emit_flag(false), m_is_pure_statement_flag(false){}
+                                m_is_emit_flag(false), m_is_pure_statement_flag(false), \
+                                m_is_condition_statement_flag(false), m_is_for_statement_flag(false){}
                 ~TransferStatus(){}
 
                 inline bool getBignumFlag(){ return m_bignum_flag; }
@@ -90,23 +93,19 @@ namespace dev{
                     return !m_is_function_declaration_flag &&   \
                             !m_is_function_call_flag &&     \
                             !m_is_event_flag && \
-                            !m_is_emit_flag;
+                            !m_is_emit_flag &&  \
+                            !m_is_condition_statement_flag &&   \
+                            !m_is_for_statement_flag;
                 }
 
                 inline bool isPureStatement(){ return m_is_pure_statement_flag; }
                 inline void setIsPureStatement(bool flag){ m_is_pure_statement_flag = flag; }
 
-                
-                /*
-                inline std::string compose_assignment(){
-                    std::string compose_str;
-                    if(!m_right_part.empty())
-                        compose_str = m_left_part + " = " + m_right_part + ";";
-                    else
-                        compose_str = m_left_part + ";";
-                    return compose_str;
-                }
-                */
+                inline bool isConditionStatement(){ return m_is_condition_statement_flag; }
+                inline void setIsConditionStatement(bool flag){ m_is_condition_statement_flag = flag; }
+
+                inline bool isForStatement(){ return m_is_for_statement_flag; }
+                inline void setIsForStatement(bool flag){ m_is_for_statement_flag = flag; }
 
                 inline void reset(){
                     m_bignum_flag = false;
@@ -115,6 +114,8 @@ namespace dev{
                     m_is_event_flag = false;
                     m_is_emit_flag = false;
                     m_is_pure_statement_flag = false;
+                    m_is_condition_statement_flag = false;
+                    m_is_for_statement_flag = false;
                 }
         };
 
@@ -275,6 +276,8 @@ namespace dev{
             void transferIfStatement(IfStatement const&);
 
             void transferForStatement(ForStatement const&);
+
+            void transferVariableDeclarationStatement(VariableDeclarationStatement const&);
 
 
             // Utility methods for handling compose parts belong to certain statement

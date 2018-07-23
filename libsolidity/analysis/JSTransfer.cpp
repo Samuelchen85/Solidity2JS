@@ -243,41 +243,7 @@ bool JSTransfer::visit(FunctionDefinition const& _function)
 		return true;
 
 	transferFunctionDeclaration(_function);
-
-	/*
-	bool const v050 = m_sourceUnit->annotation().experimentalFeatures.count(ExperimentalFeature::V050);
-
-	if (v050 && _function.noVisibilitySpecified())
-		m_errorReporter.syntaxError(_function.location(), "No visibility specified.");
-
-	if (_function.isOldStyleConstructor())
-	{
-		if (v050)
-			m_errorReporter.syntaxError(
-				_function.location(),
-				"Functions are not allowed to have the same name as the contract. "
-				"If you intend this to be a constructor, use \"constructor(...) { ... }\" to define it."
-			);
-		else
-			m_errorReporter.warning(
-				_function.location(),
-				"Defining constructors as functions with the same name as the contract is deprecated. "
-				"Use \"constructor(...) { ... }\" instead."
-			);
-	}
-	if (!_function.isImplemented() && !_function.modifiers().empty())
-	{
-		if (v050)
-			m_errorReporter.syntaxError(_function.location(), "Functions without implementation cannot have modifiers.");
-		else
-			m_errorReporter.warning(_function.location(), "Modifiers of functions without implementation are ignored." );
-	}
-	if (_function.name() == "constructor")
-		m_errorReporter.warning(_function.location(),
-			"This function is named \"constructor\" but is not the constructor of the contract. "
-			"If you intend this to be a constructor, use \"constructor(...) { ... }\" without the \"function\" keyword to define it."
-		);
-	*/
+	
 	return true;
 }
 
@@ -332,15 +298,16 @@ string JSTransfer::transferVariableDeclaration(VariableDeclaration const& _decla
 
 	if(_declaration.value()){
 		_declaration.value()->accept(*this);
+		string pop_str = popExprStack();
+		if(!pop_str.empty())
+			source_line = source_line + " = " + pop_str;
 	}
-
-	string pop_str = popExprStack();
-	if(!pop_str.empty())
-		source_line = source_line + " = " + pop_str;
 	
 	if(m_transfer_status->isPureVarDeclaration()){
 		source_line += ";\n";
 		appendSourceLine(source_line);
+	}else{
+		pushExprStack(source_line);
 	}
 
 	return source_line;
@@ -359,15 +326,54 @@ bool JSTransfer::visit(VariableDeclaration const& _declaration)
 void JSTransfer::endVisit(VariableDeclaration const& _declaration){
 	if(isAstHandled(_declaration.id()))
 		return;
+
 	setAstHandled(_declaration.id());
 }
 
-bool JSTransfer::visit(VariableDeclarationStatement const& _statement){
-	return true;
+void JSTransfer::transferVariableDeclarationStatement(VariableDeclarationStatement const& _statement){
+
+	m_transfer_status->setIsPureStatement(true);
+
+	string source_line = "";
+
+	// check initial values firstly
+	_statement.initialValue()->accept(*this);
+
+	string init_value = popExprStack();
+
+	//check each varaible declaration
+	size_t vec_size = _statement.declarations().size();
+	for(size_t i=0; i<vec_size; i++){
+		ASTPointer<VariableDeclaration> vdptr = _statement.declarations()[i];
+		vdptr->accept(*this);
+		string var = popExprStack();
+		source_line += var + " = " + init_value;
+		if(i<vec_size-1){
+			source_line += ",";
+		}
+	}
+
+	m_transfer_status->setIsPureStatement(false);
+
+	// check if we should put this into the source lines
+	if(m_transfer_status->isPureVarDeclaration())
+		appendSourceLine(source_line);
+	else
+		pushExprStack(source_line);
 }
 
-void JSTransfer::endVisit(VariableDeclarationStatement const& _statement){
+bool JSTransfer::visit(VariableDeclarationStatement const& _statement){
+	if(isAstHandled(_statement.id()))
+		return true;
 
+	transferVariableDeclarationStatement(_statement);
+
+	return true;
+}
+void JSTransfer::endVisit(VariableDeclarationStatement const& _statement){
+	if(isAstHandled(_statement.id()))
+		return;
+	setAstHandled(_statement.id());
 }
 
 
@@ -484,11 +490,16 @@ void JSTransfer::endVisit(Block const& ){
 }
 
 void JSTransfer::transferIfStatement(IfStatement const& _statement){
+	
+	m_transfer_status->setIsConditionStatement(true);
+
 	_statement.condition().accept(*this);
 
 	string pop_str = "if(" + popExprStack() + "){\n";
 	appendSourceLine(pop_str);
 	indention++;
+
+	m_transfer_status->setIsConditionStatement(false);
 
 	_statement.trueStatement().accept(*this);
 
@@ -522,6 +533,8 @@ void JSTransfer::endVisit(IfStatement const& _statement){
 
 void JSTransfer::transferForStatement(ForStatement const& _statement){
 
+	m_transfer_status->setIsForStatement(true);
+
 	string source_line = "for(";
 	
 	_statement.initializationExpression()->accept(*this);
@@ -542,6 +555,10 @@ void JSTransfer::transferForStatement(ForStatement const& _statement){
 
 	indention++;
 
+	m_transfer_status->setIsForStatement(false);
+
+
+	// handle all the statements in the loop body
 	_statement.body().accept(*this);
 
 	indention--;
@@ -604,10 +621,14 @@ void JSTransfer::endVisit(ExpressionStatement const& _node){
 	if(isAstHandled(_node.id()))
 		return;
 
-	string pop_str = popExprStack();
-	if(isExprStackEmpty())
-		pop_str += ";";
-	appendSourceLine(pop_str);
+	// expression statement can be placed in condition statement or for loop statement
+	if(!m_transfer_status->isConditionStatement() && !m_transfer_status->isForStatement()){
+		string pop_str = popExprStack();
+		if(isExprStackEmpty())
+			pop_str += ";";
+		
+		appendSourceLine(pop_str);
+	}
 
 	setAstHandled(_node.id());
 }
@@ -648,35 +669,57 @@ bool JSTransfer::visit(TupleExpression const& ){
 void JSTransfer::endVisit(TupleExpression const& ){}
 
 bool JSTransfer::visit(UnaryOperation const& _operation){
-	// Inc, Dec, Add, Sub, Not, BitNot, Delete
-	Token::Value op = _operation.getOperator();
-	bool const modifying = (op == Token::Value::Inc || op == Token::Value::Dec || op == Token::Value::Delete);
-
-	return false;
-}
-void JSTransfer::endVisit(UnaryOperation const& ){}
-
-
-bool JSTransfer::visit(BinaryOperation const& _operation){
-
 	if(isAstHandled(_operation.id()))
 		return true;
 
-	/*
-	cout<<"left expr id is: "<<_operation.leftExpression().id()<<endl;
-	cout<<"right expr id is: "<<_operation.rightExpression().id()<<endl;
-	ExpressionAnnotation anno = _operation.leftExpression().annotation();
-	TypePointer tp = _operation.rightExpression().annotation().type;
+	string source_line("");
 
-	TypePointer tp1 = printType(_operation.leftExpression());
-	TypePointer tp2 = printType(_operation.rightExpression());
-	string ts1 = printTypeString(_operation.leftExpression());
-	string ts2 = printTypeString(_operation.rightExpression());
+	// Inc, Dec, Add, Sub, Not, BitNot, Delete
+	Token::Value op = _operation.getOperator();
 
-	TypePointer const& leftType = _operation.leftExpression().annotation().type;
-	TypePointer const& rightType = _operation.rightExpression().annotation().type;
-	TypePointer commonType = leftType->binaryOperatorResult(_operation.getOperator(), rightType);
-	*/
+	_operation.subExpression().accept(*this);
+
+	string opr_name = "";
+	switch(op){
+		case Token::Value::Inc:
+			opr_name = ".plus(BigNumber(1))";
+			break;
+		case Token::Value::Dec:
+			opr_name = ".minus(BigNumber(1))";
+			break;
+		case Token::Value::Not:
+			opr_name = "!";
+			break;
+		case Token::Value::BitNot:
+			opr_name = "~";
+			break;
+		case Token::Value::Delete:
+			opr_name = "delete ";
+			break;
+		default:
+			break;
+	}
+
+	if(!opr_name.empty()){
+		if(_operation.isPrefixOperation())
+			pushExprStack(opr_name + popExprStack());
+		else
+			pushExprStack(popExprStack() + opr_name);
+	}
+
+	return true;
+}
+void JSTransfer::endVisit(UnaryOperation const& _operation){
+	if(isAstHandled(_operation.id()))
+		return;
+
+	setAstHandled(_operation.id());
+}
+
+
+bool JSTransfer::visit(BinaryOperation const& _operation){
+	if(isAstHandled(_operation.id()))
+		return true;
 
 	return true;
 }
@@ -981,7 +1024,7 @@ void JSTransfer::writeSource(const string& srcFileName){
 	try{
 		fstream of(srcFileName, ios::out);
 		of<<"// Smart contract transferred from Solidity, based on 0.4.24"<<endl<<endl;
-		of<<"\'use strict\';"<<endl<<endl;
+		of<<"\"use strict\";"<<endl<<endl;
 		vector<string>::iterator iter = m_js_src.begin();
 		while(iter != m_js_src.end()){
 			of<<*iter<<endl;
