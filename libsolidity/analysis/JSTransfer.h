@@ -131,7 +131,9 @@ namespace dev{
                     m_errorList(),
                     m_source(_source){
                         m_transfer_status = std::unique_ptr<TransferStatus>(new TransferStatus());
+                        m_js_init_src = std::unique_ptr<std::vector<std::string>>(new std::vector<std::string>());
                         indention = 0;
+                        m_contract_name = "";
                     }
 
             bool transfer(ASTNode const& _astRoot);
@@ -284,8 +286,20 @@ namespace dev{
             inline void appendSourceLine(const std::string& sourceLine){
                 std::string new_line = sourceLine;
                 for(int i=0; i<indention; i++)
-                    new_line = "   " + new_line;
+                    new_line = indent_space + new_line;
                 m_js_src.push_back(new_line);
+            }
+
+            inline void appendInitSourceLine(const std::string& sourceLine, bool insert_flag=true){
+                std::string new_line = sourceLine;
+                for(int i=0; i<indention; i++)
+                    new_line = indent_space + new_line;
+                if(insert_flag){
+                    std::vector<std::string>::iterator it = m_js_init_src->end();
+                    m_js_init_src->insert(it-1, new_line);
+                }else{
+                    m_js_init_src->push_back(new_line);
+                }
             }
 
             inline void clearExprStack(){
@@ -386,6 +400,8 @@ namespace dev{
 
             std::vector<std::string> m_js_src;
 
+            std::unique_ptr<std::vector<std::string>> m_js_init_src;
+
             // for storing source code from single statement
             std::vector<std::string> m_single_stat_src;
 
@@ -395,10 +411,14 @@ namespace dev{
 
             std::set<size_t> m_ast_id_set;
 
+            std::string m_contract_name;
+
 		    
             std::string m_source;
 
             int indention;
+
+            std::string indent_space = "   ";
 
         };
     }

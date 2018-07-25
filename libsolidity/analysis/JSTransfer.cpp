@@ -128,14 +128,19 @@ bool JSTransfer::visit(PragmaDirective const& _pragma)
 
 bool JSTransfer::visit(ContractDefinition const& _contract){
 	m_currentContract = &_contract;
-	appendSourceLine(_contract.name()+".prototype = {\n");
+	m_contract_name = _contract.name();
 	indention++;
+	
+	// for init function
+	appendInitSourceLine("init: function(){\n", false);
+	appendInitSourceLine("},\n", false);
+
 	return true;
 }
 
 void JSTransfer::endVisit(ContractDefinition const&){
 	indention--;
-	appendSourceLine("}");
+	//appendSourceLine("}");
 }
 
 bool JSTransfer::visit(ModifierDefinition const& _modifier)
@@ -249,7 +254,7 @@ bool JSTransfer::visit(FunctionDefinition const& _function)
 
 void JSTransfer::endVisit(FunctionDefinition const&){
 	indention--;
-	appendSourceLine("}\n");
+	appendSourceLine("},\n");
 }
 
 
@@ -280,8 +285,7 @@ string JSTransfer::transferVariableDeclaration(VariableDeclaration const& _decla
 	setAstHandled(_declaration.typeName()->id());			// no need to handle type separately
 
 	string varName = _declaration.name();
-
-	string source_line("");
+	string exprValue = "";
 
 	if(varName.empty())
 		return "";
@@ -289,24 +293,33 @@ string JSTransfer::transferVariableDeclaration(VariableDeclaration const& _decla
 	if(isBigNumberType((ElementaryTypeName*)_declaration.typeName())){
 		m_transfer_status->setBignumFlag(true);
 	}
-	
-	if(m_transfer_status->isFunctionDeclaration()){
-		source_line += varName;
-	}else{
-		source_line += "var " + varName;
-	}
 
 	if(_declaration.value()){
 		_declaration.value()->accept(*this);
-		string pop_str = popExprStack();
-		if(!pop_str.empty())
-			source_line = source_line + " = " + pop_str;
+		exprValue = popExprStack();
 	}
-	
+
+	string source_line = "";
 	if(m_transfer_status->isPureVarDeclaration()){
+		// for variable declaration, we put it into the init function
+		//appendSourceLine(source_line);
+
+		source_line = "this." + varName;
+		if(!exprValue.empty())
+			source_line += " = " + exprValue;
+		else
+			source_line += " = null";
 		source_line += ";\n";
-		appendSourceLine(source_line);
+		appendInitSourceLine(source_line);
+
 	}else{
+		if(m_transfer_status->isFunctionDeclaration()){
+			source_line = varName;
+		}else{
+			source_line = "var " + varName;
+			if(!exprValue.empty())
+				source_line += " = " + exprValue;
+		}
 		pushExprStack(source_line);
 	}
 
@@ -1002,7 +1015,11 @@ bool JSTransfer::visit(Literal const& _node){
 		return true;
 
 	TypePointer nodeType = _node.annotation().type;
-	unsigned int storage_size = nodeType->storageBytes();
+	unsigned int storage_bytes = nodeType->storageBytes();
+	int memory_size = nodeType->memoryHeadSize();
+	u256 storage_size = nodeType->storageSize();
+	int stack_size = nodeType->sizeOnStack();
+	
 	string literal_str = printSource(_node);
 
 	if((nodeType->category() == Type::Category::Integer ||	\
@@ -1024,12 +1041,29 @@ void JSTransfer::writeSource(const string& srcFileName){
 	try{
 		fstream of(srcFileName, ios::out);
 		of<<"// Smart contract transferred from Solidity, based on 0.4.24"<<endl<<endl;
-		of<<"\"use strict\";"<<endl<<endl;
+		of<<"\'use strict\';"<<endl<<endl;
+
+		// write contract header
+		of<<m_contract_name+".prototype = {\n"<<endl<<endl;
+
+		// write init function
+		for(size_t i=0; i<m_js_init_src->size(); i++){
+			if(i>0 && i<m_js_init_src->size()-1)
+				of<<indent_space<<m_js_init_src->at(i)<<endl;
+			else
+				of<<m_js_init_src->at(i)<<endl;
+		}
+
+		// write other sources
 		vector<string>::iterator iter = m_js_src.begin();
 		while(iter != m_js_src.end()){
 			of<<*iter<<endl;
 			iter++;
 		}
+
+		of<<"}\n"<<endl;
+		of<<"module.exports = "<<m_contract_name<<";"<<endl;
+
 		of.close();
 		m_js_src.clear();
 

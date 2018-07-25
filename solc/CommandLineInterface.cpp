@@ -50,6 +50,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/filesystem.hpp>
 
 #ifdef _WIN32 // windows
 	#include <io.h>
@@ -975,10 +976,17 @@ void CommandLineInterface::handleSourceConversion(string const& _argStr){
 		for (auto const& sourceCode: m_sourceCodes)
 			asts.push_back(&m_compiler->ast(sourceCode.first));
 
+		namespace filesys = boost::filesystem;
+
 		for (auto const& sourceCode: m_sourceCodes){
 			cout<<" =========== Start s2s tranfer ========= "<<endl;
 			JSTransfer jsTransfer(sourceCode.second);
+
+			filesys::path pathObj(sourceCode.first);
 			string sourceFileName = sourceCode.first + ".js";
+			if(pathObj.has_stem()){
+				sourceFileName = pathObj.stem().string() + ".js";
+			}
 			jsTransfer.transfer(m_compiler->ast(sourceCode.first));
 			jsTransfer.writeSource(sourceFileName);
 			cout<<" =========== Finish s2s tranfer ========= "<<endl;
