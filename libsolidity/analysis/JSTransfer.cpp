@@ -304,13 +304,18 @@ string JSTransfer::transferVariableDeclaration(VariableDeclaration const& _decla
 		// for variable declaration, we put it into the init function
 		//appendSourceLine(source_line);
 
-		source_line = "this." + varName;
-		if(!exprValue.empty())
-			source_line += " = " + exprValue;
-		else
-			source_line += " = null";
-		source_line += ";\n";
-		appendInitSourceLine(source_line);
+		// check if the variable declaration is Mapping
+		if(m_transfer_status->isMappingDeclaration()){
+			addLocalStorageProperty(varName);
+		}else{
+			source_line = "this." + varName;
+			if(!exprValue.empty())
+				source_line += " = " + exprValue;
+			else
+				source_line += " = null";
+			source_line += ";\n";
+			appendInitSourceLine(source_line);
+		}
 
 	}else{
 		if(m_transfer_status->isFunctionDeclaration()){
@@ -478,12 +483,18 @@ void JSTransfer::endVisit(EventDefinition const& ){
 
 }
 
-bool JSTransfer::visit(Mapping const& ){
+bool JSTransfer::visit(Mapping const& _map){
+	if(isAstHandled(_map.id()))
+		return true;
+	
+	m_transfer_status->setIsMappingDeclaration(true);
+
 	return true;
-
 }
-void JSTransfer::endVisit(Mapping const& ){
-
+void JSTransfer::endVisit(Mapping const& _map){
+	if(isAstHandled(_map.id()))
+		return;
+	setAstHandled(_map.id());
 }
 
 bool JSTransfer::visit(ArrayTypeName const& ){
@@ -745,7 +756,7 @@ void JSTransfer::endVisit(BinaryOperation const& _operation){
 	//bool big_num_flag = isBigNumberType(_operation.annotation().type);
 
 	if(m_transfer_status->getBignumFlag()){
-		if(m_expr_stack.size()>1){
+		if(m_expr_stack->size()>1){
 			std::string opr2 = popExprStack();
 			std::string opr1 = popExprStack();
 			std::string binary_expr = "";
@@ -848,7 +859,7 @@ void JSTransfer::endVisit(BinaryOperation const& _operation){
 					break;
 			}
 
-			if(m_expr_stack.size()>0)
+			if(m_expr_stack->size()>0)
 				binary_expr = "(" + binary_expr + ")";
 
 			if(!binary_expr.empty())
@@ -856,7 +867,7 @@ void JSTransfer::endVisit(BinaryOperation const& _operation){
 		}
 
 	}else{
-		if(m_expr_stack.size()>1){
+		if(m_expr_stack->size()>1){
 			std::string opr2 = popExprStack();
 			std::string opr1 = popExprStack();
 
@@ -960,7 +971,7 @@ void JSTransfer::endVisit(BinaryOperation const& _operation){
 					break;
 			}
 
-			if(m_expr_stack.size()>0)
+			if(m_expr_stack->size()>0)
 				binary_expr = "(" + binary_expr + ")";
 
 			if(!binary_expr.empty())
@@ -1043,6 +1054,8 @@ void JSTransfer::writeSource(const string& srcFileName){
 		of<<"// Smart contract transferred from Solidity, based on 0.4.24"<<endl<<endl;
 		of<<"\'use strict\';"<<endl<<endl;
 
+		of<<addAssertFunction()<<endl;
+
 		// write contract header
 		of<<m_contract_name+".prototype = {\n"<<endl<<endl;
 
@@ -1055,8 +1068,8 @@ void JSTransfer::writeSource(const string& srcFileName){
 		}
 
 		// write other sources
-		vector<string>::iterator iter = m_js_src.begin();
-		while(iter != m_js_src.end()){
+		vector<string>::iterator iter = m_js_src->begin();
+		while(iter != m_js_src->end()){
 			of<<*iter<<endl;
 			iter++;
 		}
@@ -1065,7 +1078,7 @@ void JSTransfer::writeSource(const string& srcFileName){
 		of<<"module.exports = "<<m_contract_name<<";"<<endl;
 
 		of.close();
-		m_js_src.clear();
+		m_js_src->clear();
 
 	}catch(Exception e){
 		cerr<<e.what()<<endl;
@@ -1087,24 +1100,6 @@ bool JSTransfer::isBigNumberType(const ElementaryTypeName* eleTypeName){
 	}
 	return false;
 }
-
-/*
-bool JSTransfer::isBigNumberType(const ElementaryTypeName* eleTypeName){
-	cout<<"type name is: "<<eleTypeName->id()<<endl;
-	ElementaryTypeNameToken token = eleTypeName->typeName();
-	Token::Value value = token.token();
-	unsigned int firstNum = token.firstNumber();
-	unsigned int secondNum = token.secondNumber();
-	// check if we need to use big number here
-	if(firstNum > SUPPORTED_INT_BITS || secondNum > SUPPORTED_INT_BITS){
-		return true;
-	}else{
-		if(token.toString(value).compare("int") || token.toString(value).compare("uint"))
-			return true;
-	}
-	return false;
-}
-*/
 
 string JSTransfer::printSource(ASTNode const& _node)
 {
@@ -1132,4 +1127,25 @@ string JSTransfer::printTypeString(Expression const& _expression)
 		return _expression.annotation().type->toString();
 	else
 		return "unknown";
+}
+
+bool JSTransfer::addLocalStorageProperty(string& varName){
+	string source_line = "LocalContractStorage.defineMapProperty(this, \"" + varName + "\");";
+	appendInitSourceLine(source_line);
+}
+
+string JSTransfer::addAssertFunction(){
+	/*
+	var assert = function(expression, info) {
+		if (!expression) {
+			throw info;
+		}
+	};
+	*/
+	string assert_source_lines = "var assert = function(expression, info){\n";
+	assert_source_lines += indent_space + "if(!expression){\n";
+	assert_source_lines += indent_space + indent_space + "throw info;\n";
+	assert_source_lines += indent_space + "}\n";
+	assert_source_lines += "}\n";
+	return assert_source_lines;
 }

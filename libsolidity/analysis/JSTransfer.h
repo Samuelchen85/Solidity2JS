@@ -66,12 +66,14 @@ namespace dev{
                 bool m_is_pure_statement_flag;
                 bool m_is_condition_statement_flag;
                 bool m_is_for_statement_flag;
+                bool m_is_mapping_declaration_flag;
 
             public:
                 TransferStatus():m_bignum_flag(false), m_is_function_declaration_flag(false),   \
                                 m_is_function_call_flag(false), m_is_event_flag(false), \
                                 m_is_emit_flag(false), m_is_pure_statement_flag(false), \
-                                m_is_condition_statement_flag(false), m_is_for_statement_flag(false){}
+                                m_is_condition_statement_flag(false), m_is_for_statement_flag(false),   \
+                                m_is_mapping_declaration_flag(false){}
                 ~TransferStatus(){}
 
                 inline bool getBignumFlag(){ return m_bignum_flag; }
@@ -107,6 +109,9 @@ namespace dev{
                 inline bool isForStatement(){ return m_is_for_statement_flag; }
                 inline void setIsForStatement(bool flag){ m_is_for_statement_flag = flag; }
 
+                inline bool isMappingDeclaration(){ return m_is_mapping_declaration_flag; }
+                inline void setIsMappingDeclaration(bool flag){ m_is_mapping_declaration_flag = flag; }
+
                 inline void reset(){
                     m_bignum_flag = false;
                     m_is_function_call_flag = false;
@@ -116,6 +121,7 @@ namespace dev{
                     m_is_pure_statement_flag = false;
                     m_is_condition_statement_flag = false;
                     m_is_for_statement_flag = false;
+                    m_is_mapping_declaration_flag = false;
                 }
         };
 
@@ -132,6 +138,8 @@ namespace dev{
                     m_source(_source){
                         m_transfer_status = std::unique_ptr<TransferStatus>(new TransferStatus());
                         m_js_init_src = std::unique_ptr<std::vector<std::string>>(new std::vector<std::string>());
+                        m_js_src = std::unique_ptr<std::vector<std::string>>(new std::vector<std::string>());
+                        m_expr_stack = std::unique_ptr<std::stack<std::string>>(new std::stack<std::string>());
                         indention = 0;
                         m_contract_name = "";
                     }
@@ -287,7 +295,7 @@ namespace dev{
                 std::string new_line = sourceLine;
                 for(int i=0; i<indention; i++)
                     new_line = indent_space + new_line;
-                m_js_src.push_back(new_line);
+                m_js_src->push_back(new_line);
             }
 
             inline void appendInitSourceLine(const std::string& sourceLine, bool insert_flag=true){
@@ -303,16 +311,16 @@ namespace dev{
             }
 
             inline void clearExprStack(){
-                while(!m_expr_stack.empty()){
-                    m_expr_stack.pop();
+                while(!m_expr_stack->empty()){
+                    m_expr_stack->pop();
                 }
             }
 
             inline std::string getExprFromStack(){
                 std::string res = "";
-                if(m_expr_stack.size() > 0){
-                    res = m_expr_stack.top();
-                    m_expr_stack.pop();
+                if(m_expr_stack->size() > 0){
+                    res = m_expr_stack->top();
+                    m_expr_stack->pop();
                 }
                 return res;
             }
@@ -357,17 +365,17 @@ namespace dev{
 
             inline std::string popExprStack(){
                 std::string pop_str("");
-                if(m_expr_stack.size()>0){
-                    pop_str = m_expr_stack.top();
-                    m_expr_stack.pop();
+                if(m_expr_stack->size()>0){
+                    pop_str = m_expr_stack->top();
+                    m_expr_stack->pop();
                 }
                 return pop_str;
             }
             inline void pushExprStack(const std::string& push_str){
-                m_expr_stack.push(push_str);
+                m_expr_stack->push(push_str);
             }
             inline bool isExprStackEmpty(){
-                return m_expr_stack.empty();
+                return m_expr_stack->empty();
             }
 
 
@@ -378,6 +386,10 @@ namespace dev{
             TypePointer printType(Expression const& _expression);
 
             std::string printTypeString(Expression const& _expression);
+
+            bool addLocalStorageProperty(std::string&);
+
+            std::string addAssertFunction();
 
         private:
 
@@ -398,16 +410,14 @@ namespace dev{
             ContractDefinition const* m_currentContract;
 
 
-            std::vector<std::string> m_js_src;
+            std::unique_ptr<std::vector<std::string>> m_js_src;
 
             std::unique_ptr<std::vector<std::string>> m_js_init_src;
 
-            // for storing source code from single statement
-            std::vector<std::string> m_single_stat_src;
-
-            std::stack<std::string> m_expr_stack;
+            std::unique_ptr<std::stack<std::string>> m_expr_stack;
 
             std::unique_ptr<TransferStatus> m_transfer_status;
+
 
             std::set<size_t> m_ast_id_set;
 
