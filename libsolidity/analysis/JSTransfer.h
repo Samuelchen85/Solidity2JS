@@ -97,7 +97,8 @@ namespace dev{
                             !m_is_event_flag && \
                             !m_is_emit_flag &&  \
                             !m_is_condition_statement_flag &&   \
-                            !m_is_for_statement_flag;
+                            !m_is_for_statement_flag && \
+                            !m_is_mapping_declaration_flag;
                 }
 
                 inline bool isPureStatement(){ return m_is_pure_statement_flag; }
@@ -140,6 +141,9 @@ namespace dev{
                         m_js_init_src = std::unique_ptr<std::vector<std::string>>(new std::vector<std::string>());
                         m_js_src = std::unique_ptr<std::vector<std::string>>(new std::vector<std::string>());
                         m_expr_stack = std::unique_ptr<std::stack<std::string>>(new std::stack<std::string>());
+                        m_event_dict = std::unique_ptr<std::map<std::string, std::vector<std::string>>>(new std::map<std::string, std::vector<std::string>>());
+                        m_mapping_identifiers = std::unique_ptr<std::vector<std::string>>(new std::vector<std::string>());
+                        m_init_func_paras = std::unique_ptr<std::vector<std::string>>(new std::vector<std::string>());
                         indention = 0;
                         m_contract_name = "";
                     }
@@ -148,6 +152,8 @@ namespace dev{
 
             // output javascript source code to a source file
             void writeSource(const std::string&);
+
+            void writeContractFunction(std::fstream& of);
 
         private:
 
@@ -403,6 +409,9 @@ namespace dev{
             /// Flag that indicates whether some version pragma was present.
             bool m_versionPragmaFound = false;
 
+            /// Flag that indicates we're handling the contructor function of a smart contract
+            bool m_handle_init_function = false;
+
             int m_inLoopDepth = 0;
 
             SourceUnit const* m_sourceUnit = nullptr;
@@ -417,6 +426,14 @@ namespace dev{
             std::unique_ptr<std::stack<std::string>> m_expr_stack;
 
             std::unique_ptr<TransferStatus> m_transfer_status;
+
+            // mapping between event name and its parameters
+            std::unique_ptr<std::map<std::string, std::vector<std::string>>> m_event_dict;
+
+            std::unique_ptr<std::vector<std::string>> m_mapping_identifiers;
+
+            // parameters in constructor function
+            std::unique_ptr<std::vector<std::string>> m_init_func_paras;
 
 
             std::set<size_t> m_ast_id_set;

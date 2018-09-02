@@ -132,7 +132,7 @@ bool JSTransfer::visit(ContractDefinition const& _contract){
 	indention++;
 	
 	// for init function
-	appendInitSourceLine("init: function(){\n", false);
+	appendInitSourceLine("init: function(", false);
 	appendInitSourceLine("},\n", false);
 
 	return true;
@@ -215,25 +215,42 @@ void JSTransfer::transferFunctionDeclaration(FunctionDefinition const& _function
 	m_transfer_status->setIsFunctionDeclaration(true);
 
 	string func_name = _function.name();
+
+	// check if the current function is the constructor function of the smart contract
+	if(func_name.length() == 0){
+		m_handle_init_function = true;
+	}
+
 	if(_function.visibility() == CallableDeclaration::Visibility::Private){
 		func_name = "_" + func_name;
 	}
 	
-	string source_line = func_name + ": function(";
+	if(m_handle_init_function){		
+		vector<ASTPointer<VariableDeclaration>> paras = _function.parameters();
+		for(size_t i =0; i<paras.size(); i++){
+			ASTPointer<VariableDeclaration> para = paras[i];
+			setAstHandled(para->id());
+			clearExprStack();
+			m_init_func_paras->push_back(transferVariableDeclaration(*para));
+		}
 
-	vector<ASTPointer<VariableDeclaration>> paras = _function.parameters();
-	for(size_t i =0; i<paras.size(); i++){
-		ASTPointer<VariableDeclaration> para = paras[i];
-		setAstHandled(para->id());
-		clearExprStack();
-		source_line += transferVariableDeclaration(*para);
-		if(i < paras.size()-1)
-			source_line += ", ";
+	}else{
+		string source_line = func_name + ": function(";
+
+		vector<ASTPointer<VariableDeclaration>> paras = _function.parameters();
+		for(size_t i =0; i<paras.size(); i++){
+			ASTPointer<VariableDeclaration> para = paras[i];
+			setAstHandled(para->id());
+			clearExprStack();
+			source_line += transferVariableDeclaration(*para);
+			if(i < paras.size()-1)
+				source_line += ", ";
+		}
+		source_line += "){\n";
+
+		// for return parameterlist, we do not need to handle for js
+		appendSourceLine(source_line);
 	}
-	source_line += "){\n";
-
-	// for return parameterlist, we do not need to handle for js
-	appendSourceLine(source_line);
 
 	// reset related flags
 	m_transfer_status->setIsFunctionDeclaration(false);
@@ -255,6 +272,7 @@ bool JSTransfer::visit(FunctionDefinition const& _function)
 void JSTransfer::endVisit(FunctionDefinition const&){
 	indention--;
 	appendSourceLine("},\n");
+	m_handle_init_function = false;
 }
 
 
@@ -284,6 +302,8 @@ string JSTransfer::transferVariableDeclaration(VariableDeclaration const& _decla
 	setAstHandled(_declaration.id());
 	setAstHandled(_declaration.typeName()->id());			// no need to handle type separately
 
+	TypeName *typeName = _declaration.typeName();
+
 	string varName = _declaration.name();
 	string exprValue = "";
 
@@ -307,6 +327,8 @@ string JSTransfer::transferVariableDeclaration(VariableDeclaration const& _decla
 		// check if the variable declaration is Mapping
 		if(m_transfer_status->isMappingDeclaration()){
 			addLocalStorageProperty(varName);
+			m_transfer_status->setIsMappingDeclaration(false);
+
 		}else{
 			source_line = "this." + varName;
 			if(!exprValue.empty())
@@ -320,6 +342,11 @@ string JSTransfer::transferVariableDeclaration(VariableDeclaration const& _decla
 	}else{
 		if(m_transfer_status->isFunctionDeclaration()){
 			source_line = varName;
+
+		}else if(m_transfer_status->isMappingDeclaration()){
+			addLocalStorageProperty(varName);
+			m_transfer_status->setIsMappingDeclaration(false);
+
 		}else{
 			source_line = "var " + varName;
 			if(!exprValue.empty())
@@ -475,12 +502,19 @@ void JSTransfer::endVisit(UserDefinedTypeName const& ){
 
 }
 
-bool JSTransfer::visit(EventDefinition const& ){
+bool JSTransfer::visit(EventDefinition const& _evt_definition){
+	if(isAstHandled(_evt_definition.id()))
+		return true;
+
+	m_transfer_status->setIsEvent(true);
+
 	return true;
 
 }
-void JSTransfer::endVisit(EventDefinition const& ){
-
+void JSTransfer::endVisit(EventDefinition const& _evt_definition){
+	if(isAstHandled(_evt_definition.id()))
+		return
+	m_transfer_status->setIsEvent(false);
 }
 
 bool JSTransfer::visit(Mapping const& _map){
@@ -488,6 +522,9 @@ bool JSTransfer::visit(Mapping const& _map){
 		return true;
 	
 	m_transfer_status->setIsMappingDeclaration(true);
+
+	_map.keyType().accept(*this);
+	_map.valueType().accept(*this);
 
 	return true;
 }
@@ -505,12 +542,10 @@ void JSTransfer::endVisit(ArrayTypeName const& ){
 
 }
 
-bool JSTransfer::visit(Block const& ){
+bool JSTransfer::visit(Block const& _block){
 	return true;
-
 }
-void JSTransfer::endVisit(Block const& ){
-
+void JSTransfer::endVisit(Block const& _block){
 }
 
 void JSTransfer::transferIfStatement(IfStatement const& _statement){
@@ -651,7 +686,11 @@ void JSTransfer::endVisit(ExpressionStatement const& _node){
 		if(isExprStackEmpty())
 			pop_str += ";";
 		
-		appendSourceLine(pop_str);
+		if(m_handle_init_function){
+			appendInitSourceLine("this." + pop_str);
+		}else{
+			appendSourceLine(pop_str);
+		}
 	}
 
 	setAstHandled(_node.id());
@@ -1056,15 +1095,31 @@ void JSTransfer::writeSource(const string& srcFileName){
 
 		of<<addAssertFunction()<<endl;
 
+		writeContractFunction(of);
+
 		// write contract header
 		of<<m_contract_name+".prototype = {\n"<<endl<<endl;
 
 		// write init function
-		for(size_t i=0; i<m_js_init_src->size(); i++){
-			if(i>0 && i<m_js_init_src->size()-1)
-				of<<indent_space<<m_js_init_src->at(i)<<endl;
-			else
-				of<<m_js_init_src->at(i)<<endl;
+		if(m_js_init_src->size()>0){
+			of<<m_js_init_src->at(0);
+			if(m_init_func_paras->size()>0){
+				string para_str = "";
+				for(size_t i=0; i<m_init_func_paras->size(); i++){
+					para_str += m_init_func_paras->at(i);
+					if(i<m_init_func_paras->size()-1){
+						para_str += ", ";
+					}
+				}
+				of<<para_str;
+			}
+			of<<"){\n"<<endl;
+			for(size_t i=1; i<m_js_init_src->size(); i++){
+				if(i>0 && i<m_js_init_src->size()-1)
+					of<<indent_space<<m_js_init_src->at(i)<<endl;
+				else
+					of<<m_js_init_src->at(i)<<endl;
+			}
 		}
 
 		// write other sources
@@ -1146,6 +1201,12 @@ string JSTransfer::addAssertFunction(){
 	assert_source_lines += indent_space + "if(!expression){\n";
 	assert_source_lines += indent_space + indent_space + "throw info;\n";
 	assert_source_lines += indent_space + "}\n";
-	assert_source_lines += "}\n";
+	assert_source_lines += "};\n";
 	return assert_source_lines;
+}
+
+void JSTransfer::writeContractFunction(fstream& of){
+	of<<"var "<<m_contract_name<<" = function(){ "<<endl;
+
+	of<<"};"<<endl<<endl;
 }
