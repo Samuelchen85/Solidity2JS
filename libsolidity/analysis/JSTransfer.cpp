@@ -255,7 +255,8 @@ void JSTransfer::transferFunctionDeclaration(FunctionDefinition const& _function
 	// reset related flags
 	m_transfer_status->setIsFunctionDeclaration(false);
 
-	indention++;
+	if(!m_handle_init_function)
+		indention++;
 }
 
 
@@ -270,8 +271,10 @@ bool JSTransfer::visit(FunctionDefinition const& _function)
 }
 
 void JSTransfer::endVisit(FunctionDefinition const&){
-	indention--;
-	appendSourceLine("},\n");
+	if(!m_handle_init_function){
+		indention--;
+		appendSourceLine("},\n");
+	}
 	m_handle_init_function = false;
 }
 
@@ -687,7 +690,7 @@ void JSTransfer::endVisit(ExpressionStatement const& _node){
 			pop_str += ";";
 		
 		if(m_handle_init_function){
-			appendInitSourceLine("this." + pop_str);
+			appendInitSourceLine("this." + pop_str + ";\n");
 		}else{
 			appendSourceLine(pop_str);
 		}
